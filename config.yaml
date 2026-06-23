@@ -1,0 +1,23 @@
+server:
+  port: 8080
+
+database:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: root
+  dbname: parking_system
+  charset: utf8mb4
+  parse_time: true
+  loc: Local
+
+jwt:
+  secret: parking-secret-key-2024
+  expire_hours: 24
+
+parking:
+  total_spaces: 100
+  hourly_rate: 5
+  max_daily_rate: 50
+  free_minutes: 15
+  monthly_card_price: 200
