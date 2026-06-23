@@ -31,19 +31,23 @@ type ParkingSpace struct {
 }
 
 type ParkingRecord struct {
-	ID           uint       `gorm:"primaryKey" json:"id"`
-	PlateNo      string     `gorm:"index;size:20;not null" json:"plate_no"`
-	SpaceNo      string     `gorm:"size:20" json:"space_no,omitempty"`
-	EntryTime    time.Time  `gorm:"not null" json:"entry_time"`
-	ExitTime     *time.Time `json:"exit_time,omitempty"`
-	Duration     int        `json:"duration,omitempty"`
-	Fee          float64    `json:"fee,omitempty"`
-	IsMonthly    bool       `gorm:"default:false" json:"is_monthly"`
-	Operator     string     `gorm:"size:50" json:"operator,omitempty"`
-	ExitOperator string     `gorm:"size:50" json:"exit_operator,omitempty"`
-	Status       string     `gorm:"size:20;default:parking" json:"status"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID            uint       `gorm:"primaryKey" json:"id"`
+	PlateNo       string     `gorm:"index;size:20;not null" json:"plate_no"`
+	SpaceNo       string     `gorm:"size:20" json:"space_no,omitempty"`
+	EntryTime     time.Time  `gorm:"not null" json:"entry_time"`
+	ExitTime      *time.Time `json:"exit_time,omitempty"`
+	Duration      int        `json:"duration,omitempty"`
+	DayDuration   int        `json:"day_duration,omitempty"`
+	NightDuration int        `json:"night_duration,omitempty"`
+	Fee           float64    `json:"fee,omitempty"`
+	DayFee        float64    `json:"day_fee,omitempty"`
+	NightFee      float64    `json:"night_fee,omitempty"`
+	IsMonthly     bool       `gorm:"default:false" json:"is_monthly"`
+	Operator      string     `gorm:"size:50" json:"operator,omitempty"`
+	ExitOperator  string     `gorm:"size:50" json:"exit_operator,omitempty"`
+	Status        string     `gorm:"size:20;default:parking" json:"status"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type MonthlyCard struct {

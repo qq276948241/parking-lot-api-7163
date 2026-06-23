@@ -131,11 +131,14 @@ Authorization: Bearer <token>
 
 ## 计费规则
 
-可在 `config.yaml` 中配置：
+采用**分时段计费**：白天（默认 08:00 ~ 20:00）一个费率，夜间（默认 20:00 ~ 次日 08:00）另一个费率，全部可在 `config.yaml` 中配置：
 
 ```yaml
 parking:
-  hourly_rate: 5        # 每小时5元
+  daytime_rate: 6       # 白天每小时6元
+  nighttime_rate: 3     # 夜间每小时3元
+  daytime_start: 8      # 白天开始（小时，0-23）
+  daytime_end: 20       # 白天结束（小时，0-23），不含该小时
   max_daily_rate: 50    # 单日封顶50元
   free_minutes: 15      # 前15分钟免费
   monthly_card_price: 200  # 月卡单价/月
@@ -143,6 +146,10 @@ parking:
 
 计费逻辑：
 1. 停车时长 ≤ 免费分钟数：0 元
-2. 超出部分按小时向上取整计费
-3. 单日费用不超过封顶价
-4. 月卡有效期内车辆全免费
+2. 超出部分按**实际经过的每一分钟**判断属于白天还是夜间，分别累计到 `day_duration` / `night_duration`
+3. 白天、夜间时长分别按小时**向上取整**，乘以各自费率得到 `day_fee` / `night_fee`
+4. 单日总费用不超过封顶价（跨天按 `days * 封顶价 + min(剩余费, 封顶价)` 计算）
+5. 出场接口返回 `breakdown` 字段，包含分时段时长和费用明细
+6. 月卡有效期内车辆全免费
+
+示例：白天停 2 小时 10 分钟，夜间停 40 分钟 → `day_duration=130, night_duration=40, day_fee=18 (3小时×6), night_fee=3 (1小时×3), total=21`

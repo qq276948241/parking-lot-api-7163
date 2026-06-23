@@ -18,6 +18,10 @@ jwt:
 parking:
   total_spaces: 100
   hourly_rate: 5
+  daytime_rate: 6
+  nighttime_rate: 3
+  daytime_start: 8
+  daytime_end: 20
   max_daily_rate: 50
   free_minutes: 15
   monthly_card_price: 200

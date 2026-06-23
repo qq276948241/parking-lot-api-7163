@@ -46,6 +46,10 @@ type JWTConfig struct {
 type ParkingConfig struct {
 	TotalSpaces      int `yaml:"total_spaces"`
 	HourlyRate       int `yaml:"hourly_rate"`
+	DaytimeRate      int `yaml:"daytime_rate"`
+	NighttimeRate    int `yaml:"nighttime_rate"`
+	DaytimeStart     int `yaml:"daytime_start"`
+	DaytimeEnd       int `yaml:"daytime_end"`
 	MaxDailyRate     int `yaml:"max_daily_rate"`
 	FreeMinutes      int `yaml:"free_minutes"`
 	MonthlyCardPrice int `yaml:"monthly_card_price"`

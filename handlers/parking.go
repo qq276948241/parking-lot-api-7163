@@ -30,6 +30,14 @@ type ExitReq struct {
 	PayType string `json:"pay_type"`
 }
 
+type FeeBreakdown struct {
+	DayDuration   int     `json:"day_duration"`
+	NightDuration int     `json:"night_duration"`
+	DayFee        float64 `json:"day_fee"`
+	NightFee      float64 `json:"night_fee"`
+	TotalFee      float64 `json:"total_fee"`
+}
+
 func (h *ParkingHandler) Entry(c *gin.Context) {
 	var req EntryReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -77,8 +85,8 @@ func (h *ParkingHandler) Entry(c *gin.Context) {
 	h.db.Save(&space)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":   "进场成功",
-		"record":    record,
+		"message":    "进场成功",
+		"record":     record,
 		"is_monthly": isMonthly,
 	})
 }
@@ -105,11 +113,20 @@ func (h *ParkingHandler) Exit(c *gin.Context) {
 	duration := int(now.Sub(record.EntryTime).Minutes())
 	record.Duration = duration
 
-	fee := 0.0
+	breakdown := FeeBreakdown{}
 	if !record.IsMonthly {
-		fee = calculateFee(duration, h.cfg.Parking.HourlyRate, h.cfg.Parking.MaxDailyRate, h.cfg.Parking.FreeMinutes)
+		breakdown = calculateFeeByPeriod(
+			record.EntryTime, now,
+			h.cfg.Parking.DaytimeRate, h.cfg.Parking.NighttimeRate,
+			h.cfg.Parking.DaytimeStart, h.cfg.Parking.DaytimeEnd,
+			h.cfg.Parking.MaxDailyRate, h.cfg.Parking.FreeMinutes,
+		)
+		record.DayDuration = breakdown.DayDuration
+		record.NightDuration = breakdown.NightDuration
+		record.DayFee = breakdown.DayFee
+		record.NightFee = breakdown.NightFee
+		record.Fee = breakdown.TotalFee
 	}
-	record.Fee = fee
 	record.Status = "exited"
 	exitOperator, _ := c.Get("username")
 	record.ExitOperator = exitOperator.(string)
@@ -124,11 +141,11 @@ func (h *ParkingHandler) Exit(c *gin.Context) {
 		h.db.Save(&space)
 	}
 
-	if fee > 0 {
+	if record.Fee > 0 {
 		bill := models.Bill{
 			RecordID:  record.ID,
 			PlateNo:   record.PlateNo,
-			Amount:    fee,
+			Amount:    record.Fee,
 			PayType:   req.PayType,
 			PayTime:   now,
 			IsMonthly: false,
@@ -140,24 +157,80 @@ func (h *ParkingHandler) Exit(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "出场成功",
 		"record":     record,
-		"fee":        fee,
+		"fee":        record.Fee,
+		"breakdown":  breakdown,
 		"is_monthly": record.IsMonthly,
 	})
 }
 
-func calculateFee(minutes, hourlyRate, maxDailyRate, freeMinutes int) float64 {
-	if minutes <= freeMinutes {
-		return 0
+func calculateFeeByPeriod(entry, exit time.Time, daytimeRate, nighttimeRate, daytimeStart, daytimeEnd, maxDailyRate, freeMinutes int) FeeBreakdown {
+	totalMin := int(exit.Sub(entry).Minutes())
+	if totalMin <= 0 {
+		return FeeBreakdown{}
 	}
-	effectiveMin := minutes - freeMinutes
-	hours := int(math.Ceil(float64(effectiveMin) / 60))
-	days := hours / 24
-	remainHours := hours % 24
-	fee := float64(days*maxDailyRate + remainHours*hourlyRate)
-	if hours > 0 && fee > float64(days+1)*float64(maxDailyRate) {
-		fee = float64(days+1) * float64(maxDailyRate)
+	effectiveMin := totalMin - freeMinutes
+	if effectiveMin <= 0 {
+		return FeeBreakdown{}
 	}
-	return fee
+
+	dayMin := 0
+	nightMin := 0
+
+	cursor := entry
+	effectiveStart := entry.Add(time.Duration(freeMinutes) * time.Minute)
+	if effectiveStart.After(exit) {
+		return FeeBreakdown{}
+	}
+	cursor = effectiveStart
+
+	for cursor.Before(exit) {
+		next := cursor.Add(time.Minute)
+		if next.After(exit) {
+			next = exit
+		}
+		hour := cursor.Hour()
+		if hour >= daytimeStart && hour < daytimeEnd {
+			dayMin += int(next.Sub(cursor).Minutes())
+		} else {
+			nightMin += int(next.Sub(cursor).Minutes())
+		}
+		cursor = next
+	}
+
+	dayHours := 0
+	if dayMin > 0 {
+		dayHours = int(math.Ceil(float64(dayMin) / 60))
+	}
+	nightHours := 0
+	if nightMin > 0 {
+		nightHours = int(math.Ceil(float64(nightMin) / 60))
+	}
+
+	dayFee := float64(dayHours * daytimeRate)
+	nightFee := float64(nightHours * nighttimeRate)
+
+	days := effectiveMin / (24 * 60)
+	remainMin := effectiveMin % (24 * 60)
+	totalFee := dayFee + nightFee
+
+	if days > 0 {
+		dailyFee := float64(maxDailyRate)
+		remainHours := int(math.Ceil(float64(remainMin) / 60))
+		_ = remainHours
+		totalFee = float64(days)*dailyFee + math.Min(dayFee+nightFee, dailyFee)
+	} else {
+		if totalFee > float64(maxDailyRate) {
+			totalFee = float64(maxDailyRate)
+		}
+	}
+
+	return FeeBreakdown{
+		DayDuration:   dayMin,
+		NightDuration: nightMin,
+		DayFee:        dayFee,
+		NightFee:      nightFee,
+		TotalFee:      totalFee,
+	}
 }
 
 func (h *ParkingHandler) ListRecords(c *gin.Context) {
