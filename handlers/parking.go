@@ -1,10 +1,9 @@
 package handlers
 
 import (
-	"math"
 	"net/http"
-	"parking-system/config"
 	"parking-system/models"
+	"parking-system/services"
 	"strconv"
 	"time"
 
@@ -13,12 +12,12 @@ import (
 )
 
 type ParkingHandler struct {
-	db  *gorm.DB
-	cfg *config.Config
+	db         *gorm.DB
+	parkingSvc *services.ParkingService
 }
 
-func NewParkingHandler(db *gorm.DB, cfg *config.Config) *ParkingHandler {
-	return &ParkingHandler{db: db, cfg: cfg}
+func NewParkingHandler(db *gorm.DB, parkingSvc *services.ParkingService) *ParkingHandler {
+	return &ParkingHandler{db: db, parkingSvc: parkingSvc}
 }
 
 type EntryReq struct {
@@ -28,14 +27,6 @@ type EntryReq struct {
 type ExitReq struct {
 	PlateNo string `json:"plate_no" binding:"required"`
 	PayType string `json:"pay_type"`
-}
-
-type FeeBreakdown struct {
-	DayDuration   int     `json:"day_duration"`
-	NightDuration int     `json:"night_duration"`
-	DayFee        float64 `json:"day_fee"`
-	NightFee      float64 `json:"night_fee"`
-	TotalFee      float64 `json:"total_fee"`
 }
 
 func (h *ParkingHandler) Entry(c *gin.Context) {
@@ -110,23 +101,17 @@ func (h *ParkingHandler) Exit(c *gin.Context) {
 
 	now := time.Now()
 	record.ExitTime = &now
-	duration := int(now.Sub(record.EntryTime).Minutes())
-	record.Duration = duration
+	record.Duration = int(now.Sub(record.EntryTime).Minutes())
 
-	breakdown := FeeBreakdown{}
+	breakdown := h.parkingSvc.CalculateFee(record.EntryTime, now, record.IsMonthly)
 	if !record.IsMonthly {
-		breakdown = calculateFeeByPeriod(
-			record.EntryTime, now,
-			h.cfg.Parking.DaytimeRate, h.cfg.Parking.NighttimeRate,
-			h.cfg.Parking.DaytimeStart, h.cfg.Parking.DaytimeEnd,
-			h.cfg.Parking.MaxDailyRate, h.cfg.Parking.FreeMinutes,
-		)
 		record.DayDuration = breakdown.DayDuration
 		record.NightDuration = breakdown.NightDuration
 		record.DayFee = breakdown.DayFee
 		record.NightFee = breakdown.NightFee
 		record.Fee = breakdown.TotalFee
 	}
+
 	record.Status = "exited"
 	exitOperator, _ := c.Get("username")
 	record.ExitOperator = exitOperator.(string)
@@ -161,76 +146,6 @@ func (h *ParkingHandler) Exit(c *gin.Context) {
 		"breakdown":  breakdown,
 		"is_monthly": record.IsMonthly,
 	})
-}
-
-func calculateFeeByPeriod(entry, exit time.Time, daytimeRate, nighttimeRate, daytimeStart, daytimeEnd, maxDailyRate, freeMinutes int) FeeBreakdown {
-	totalMin := int(exit.Sub(entry).Minutes())
-	if totalMin <= 0 {
-		return FeeBreakdown{}
-	}
-	effectiveMin := totalMin - freeMinutes
-	if effectiveMin <= 0 {
-		return FeeBreakdown{}
-	}
-
-	dayMin := 0
-	nightMin := 0
-
-	cursor := entry
-	effectiveStart := entry.Add(time.Duration(freeMinutes) * time.Minute)
-	if effectiveStart.After(exit) {
-		return FeeBreakdown{}
-	}
-	cursor = effectiveStart
-
-	for cursor.Before(exit) {
-		next := cursor.Add(time.Minute)
-		if next.After(exit) {
-			next = exit
-		}
-		hour := cursor.Hour()
-		if hour >= daytimeStart && hour < daytimeEnd {
-			dayMin += int(next.Sub(cursor).Minutes())
-		} else {
-			nightMin += int(next.Sub(cursor).Minutes())
-		}
-		cursor = next
-	}
-
-	dayHours := 0
-	if dayMin > 0 {
-		dayHours = int(math.Ceil(float64(dayMin) / 60))
-	}
-	nightHours := 0
-	if nightMin > 0 {
-		nightHours = int(math.Ceil(float64(nightMin) / 60))
-	}
-
-	dayFee := float64(dayHours * daytimeRate)
-	nightFee := float64(nightHours * nighttimeRate)
-
-	days := effectiveMin / (24 * 60)
-	remainMin := effectiveMin % (24 * 60)
-	totalFee := dayFee + nightFee
-
-	if days > 0 {
-		dailyFee := float64(maxDailyRate)
-		remainHours := int(math.Ceil(float64(remainMin) / 60))
-		_ = remainHours
-		totalFee = float64(days)*dailyFee + math.Min(dayFee+nightFee, dailyFee)
-	} else {
-		if totalFee > float64(maxDailyRate) {
-			totalFee = float64(maxDailyRate)
-		}
-	}
-
-	return FeeBreakdown{
-		DayDuration:   dayMin,
-		NightDuration: nightMin,
-		DayFee:        dayFee,
-		NightFee:      nightFee,
-		TotalFee:      totalFee,
-	}
 }
 
 func (h *ParkingHandler) ListRecords(c *gin.Context) {

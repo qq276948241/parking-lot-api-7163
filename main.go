@@ -6,6 +6,7 @@ import (
 	"parking-system/handlers"
 	"parking-system/middleware"
 	"parking-system/models"
+	"parking-system/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,7 +29,8 @@ func main() {
 	r.Use(middleware.CORS())
 
 	authHandler := handlers.NewAuthHandler(db, cfg)
-	parkingHandler := handlers.NewParkingHandler(db, cfg)
+	parkingSvc := services.NewParkingService(cfg)
+	parkingHandler := handlers.NewParkingHandler(db, parkingSvc)
 	spaceHandler := handlers.NewSpaceHandler(db, cfg)
 	cardHandler := handlers.NewCardHandler(db, cfg)
 	billHandler := handlers.NewBillHandler(db, cfg)
